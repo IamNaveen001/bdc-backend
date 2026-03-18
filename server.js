@@ -12,10 +12,24 @@ dotenv.config();
 
 const app = express();
 
-/* ✅ CORS — MUST COME FIRST */
+/* ✅ CORS — supports local + deployed frontend */
+const allowedOrigins = [
+  'http://localhost:5173', // local frontend
+  process.env.CORS_ORIGIN, // deployed frontend
+];
+
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: function (origin, callback) {
+      // allow requests with no origin (Postman, curl, etc.)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      } else {
+        return callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
   })
 );
@@ -25,12 +39,24 @@ app.use(helmet());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
+
+/* rate limiting */
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 300,
+    max: 500,
   })
 );
+
+/* ✅ Root route (prevents 404 confusion) */
+app.get('/', (req, res) => {
+  res.send('Backend is running 🚀');
+});
+
+/* health check */
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
 
 /* routes */
 app.use('/api/contact', require('./routes/contact'));
@@ -39,13 +65,13 @@ app.use('/api/donors', require('./routes/donorRoutes'));
 app.use('/api/events', require('./routes/eventRoutes'));
 app.use('/api/email', require('./routes/emailRoutes'));
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
-
 /* error handler */
 app.use(errorHandler);
 
+/* ✅ PORT fix for Render */
 const PORT = process.env.PORT || 5000;
 
+/* connect DB and start server */
 connectDB()
   .then(() => {
     app.listen(PORT, () =>
