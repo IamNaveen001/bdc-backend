@@ -12,7 +12,7 @@ const donorSchema = new mongoose.Schema(
     age: { type: Number, required: true, min: 18, max: 65 },
     gender: { type: String, required: true, enum: ['Male', 'Female', 'Other'] },
     phone: { type: String, required: true, trim: true },
-    email: { type: String, required: true, lowercase: true, trim: true },
+    email: { type: String, required: true, lowercase: true, trim: true, index: true },
     location: { type: String, required: true, trim: true, index: true },
     lastDonationDate: { type: Date },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }

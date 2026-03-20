@@ -22,6 +22,31 @@ const getBaseUrl = (req) => {
   return `${req.protocol}://${req.get('host')}`;
 };
 
+const buildMailError = (err) => {
+  const rawMessage = err?.message || 'Unknown mail error';
+  const lowerMessage = rawMessage.toLowerCase();
+  const errorCode = err?.code || '';
+  const onRender = process.env.RENDER === 'true';
+
+  if (
+    onRender &&
+    ['ETIMEDOUT', 'ESOCKET', 'ECONNECTION', 'EHOSTUNREACH'].includes(errorCode) &&
+    (lowerMessage.includes('connect') || lowerMessage.includes('timeout') || lowerMessage.includes('greeting'))
+  ) {
+    return 'Emergency email failed: SMTP is unreachable from this Render service. Render free web services block outbound SMTP ports 25, 465, and 587. Use a paid Render instance or switch to an email API provider over HTTPS.';
+  }
+
+  if (rawMessage.includes('Mail configuration is incomplete')) {
+    return `Emergency email failed: ${rawMessage}`;
+  }
+
+  if (errorCode === 'EAUTH') {
+    return 'Emergency email failed: SMTP authentication failed. Recheck SMTP_USER, SMTP_PASS, and the Gmail app password in deployment.';
+  }
+
+  return `Emergency email failed: ${rawMessage}`;
+};
+
 const buildEmergencyEmailHtml = ({ donor, bloodGroup, subject, message, donateUrl }) => `
   <div style="font-family:Arial,Helvetica,sans-serif;background:#f9fafb;padding:20px">
     <div style="max-width:640px;margin:auto;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #e5e7eb">
@@ -134,8 +159,14 @@ const sendEmergencyEmail = asyncHandler(async (req, res) => {
     }
   } catch (err) {
     await EmergencyAlert.findByIdAndDelete(alert._id);
+    console.error('Emergency email send failure', {
+      message: err?.message,
+      code: err?.code,
+      command: err?.command,
+      response: err?.response
+    });
     err.statusCode = 500;
-    err.message = `Emergency email failed: ${err.message}`;
+    err.message = buildMailError(err);
     throw err;
   }
 
@@ -200,27 +231,36 @@ const acceptEmergencyResponse = asyncHandler(async (req, res) => {
   const adminRecipients = [...new Set([...getAdminEmails(), alert.createdByEmail].filter(Boolean))];
 
   if (adminRecipients.length) {
-    await transporter.sendMail({
-      from: sender,
-      to: adminRecipients.join(', '),
-      subject: `Donor accepted: ${donor.name} for ${alert.bloodGroup} emergency`,
-      html: `
-        <div style="font-family:Arial,Helvetica,sans-serif;background:#f8fafc;padding:20px">
-          <div style="max-width:640px;margin:auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;padding:24px">
-            <p style="margin-top:0;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#dc2626;font-weight:700">Donor Response</p>
-            <h2 style="margin:0 0 16px">A donor accepted the emergency request</h2>
-            <p><strong>Name:</strong> ${escapeHtml(donor.name)}</p>
-            <p><strong>Blood Group:</strong> ${escapeHtml(donor.bloodGroup)}</p>
-            <p><strong>Phone:</strong> ${escapeHtml(donor.phone)}</p>
-            <p><strong>Email:</strong> ${escapeHtml(donor.email)}</p>
-            <p><strong>Location:</strong> ${escapeHtml(donor.location)}</p>
-            <p><strong>Accepted at:</strong> ${escapeHtml(new Date().toLocaleString())}</p>
-            <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0" />
-            <p style="white-space:pre-line"><strong>Original message:</strong><br />${escapeHtml(alert.message)}</p>
+    try {
+      await transporter.sendMail({
+        from: sender,
+        to: adminRecipients.join(', '),
+        subject: `Donor accepted: ${donor.name} for ${alert.bloodGroup} emergency`,
+        html: `
+          <div style="font-family:Arial,Helvetica,sans-serif;background:#f8fafc;padding:20px">
+            <div style="max-width:640px;margin:auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;padding:24px">
+              <p style="margin-top:0;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#dc2626;font-weight:700">Donor Response</p>
+              <h2 style="margin:0 0 16px">A donor accepted the emergency request</h2>
+              <p><strong>Name:</strong> ${escapeHtml(donor.name)}</p>
+              <p><strong>Blood Group:</strong> ${escapeHtml(donor.bloodGroup)}</p>
+              <p><strong>Phone:</strong> ${escapeHtml(donor.phone)}</p>
+              <p><strong>Email:</strong> ${escapeHtml(donor.email)}</p>
+              <p><strong>Location:</strong> ${escapeHtml(donor.location)}</p>
+              <p><strong>Accepted at:</strong> ${escapeHtml(new Date().toLocaleString())}</p>
+              <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0" />
+              <p style="white-space:pre-line"><strong>Original message:</strong><br />${escapeHtml(alert.message)}</p>
+            </div>
           </div>
-        </div>
-      `
-    });
+        `
+      });
+    } catch (err) {
+      console.error('Emergency response admin notification failure', {
+        message: err?.message,
+        code: err?.code,
+        command: err?.command,
+        response: err?.response
+      });
+    }
   }
 
   return res.send(

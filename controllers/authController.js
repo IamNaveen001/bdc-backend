@@ -1,13 +1,17 @@
 const User = require('../models/User');
+const Donor = require('../models/Donor');
 const asyncHandler = require('../middleware/asyncHandler');
 const { getAdminEmails, isAdminEmail } = require('../utils/adminEmails');
 
 const getPrimaryAdminEmails = getAdminEmails;
 const isPrimaryAdminEmail = isAdminEmail;
 
+const normalizeEmail = (value = '') => String(value).trim().toLowerCase();
+
 const ensureUser = asyncHandler(async (req, res) => {
   const { name } = req.body;
-  const { uid, email } = req.user;
+  const { uid } = req.user;
+  const email = normalizeEmail(req.user.email);
 
   let user = await User.findOne({ firebaseUid: uid });
 
@@ -31,6 +35,15 @@ const ensureUser = asyncHandler(async (req, res) => {
       dirty = true;
     }
     if (dirty) await user.save();
+  }
+
+  // If admin had already added this donor email, attach that donor to this user.
+  if (email) {
+    await Donor.findOneAndUpdate(
+      { email },
+      { $set: { createdBy: user._id } },
+      { sort: { createdAt: -1 } }
+    );
   }
 
   res.json({
