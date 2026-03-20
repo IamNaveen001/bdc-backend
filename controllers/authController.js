@@ -1,13 +1,9 @@
 const User = require('../models/User');
 const asyncHandler = require('../middleware/asyncHandler');
+const { getAdminEmails, isAdminEmail } = require('../utils/adminEmails');
 
-const getPrimaryAdminEmails = () =>
-  (process.env.ADMIN_EMAILS || '')
-    .split(',')
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-
-const isPrimaryAdminEmail = (email) => getPrimaryAdminEmails().includes((email || '').toLowerCase());
+const getPrimaryAdminEmails = getAdminEmails;
+const isPrimaryAdminEmail = isAdminEmail;
 
 const ensureUser = asyncHandler(async (req, res) => {
   const { name } = req.body;

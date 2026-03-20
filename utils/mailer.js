@@ -10,7 +10,7 @@ const createTransporter = () => {
 
   if ((!host && !isGmail) || !user || !pass) {
     throw new Error(
-      'Mail configuration is incomplete. Set SMTP_HOST and SMTP_USER/SMTP_PASS, or provide Gmail-compatible SMTP/EMAIL credentials.'
+      'Mail configuration is incomplete. Set SMTP_HOST and SMTP_USER/SMTP_PASS, or provide Gmail-compatible SMTP/EMAIL credentials in the deployment environment.'
     );
   }
 
@@ -24,7 +24,10 @@ const createTransporter = () => {
         port,
         secure: port === 465,
         requireTLS: port !== 465,
-        auth: { user, pass }
+        auth: { user, pass },
+        tls: {
+          rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== 'false'
+        }
       };
 
   return nodemailer.createTransport(config);
